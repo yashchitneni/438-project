@@ -73,5 +73,9 @@ function initialize() {
         infowindow.open(map, marker);
     });
 
+    google.maps.event.addListener(marker, 'click', function () {
+        infowindow.open(map, marker);
+    });
+
 }
 google.maps.event.addDomListener(window, 'load', initialize);
