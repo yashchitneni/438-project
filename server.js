@@ -1,20 +1,31 @@
-var io;
+var express;
+var app;
 var http;
 var https;
+var io;
+var pouchDB;
+var db;
 var querystring;
 var zlib;
 var twitterBearerToken;
 
 function initialize() {
     //variables to initialize the server 
-    var express = require('express');
-    var app = express();
+    express = require('express');
+    app = express();
 	http = require('http');
 	https = require('https');
+    server = http.Server(app);
+    io = require('socket.io')(server);
+	pouchDB = require('pouchdb');
 	zlib = require('zlib');
 	querystring = require('querystring');
-    var server = http.Server(app);
-    io = require('socket.io')(server);
+	
+	pouchDB.on('created', function (dbName) {
+		console.log('Database created...');
+	});
+	
+	db = new pouchDB('place_trends', {db: require('memdown')});
     
     server.listen(10004);
     console.log("Listening on port 10004");	
@@ -58,9 +69,8 @@ function getTwitterAccessToken(callback) {
 	req.end();
 }
 
-function getTwitterTrends(client, yahooWOEID) {
+function getTwitterTrends(client, place, yahooWOEID) {
 	if(yahooWOEID != 0) {
-		var trends = "";
 		var options = {
 			method: 'GET',
 			host: 'api.twitter.com',
@@ -78,11 +88,35 @@ function getTwitterTrends(client, yahooWOEID) {
 				bodyChunks.push(chunk);
 			}).on('end', function() {
 				var body = Buffer.concat(bodyChunks);
+				var trends = "";
 				zlib.unzip(body, function(err, body) {
 					if (!err) {
 						trends = body.toString();
 					}
 					console.log("Twitter Trends: " + trends);
+					var date = new Date();
+					var doc = {
+						"_id": place,
+					    "woied": yahooWOEID,
+					    "created": date,
+					    "result": trends
+					};
+					
+					db.get(place).then(function(doc) {
+						console.log('Updated ' + place + ' in database...');
+						return db.put({
+							"created": date,
+							"result": trends
+						}, place, doc._rev);
+					}).then(function (result) {
+						
+					}).catch(function (err) {
+						if(err.status == 404 && err.name == "not_found") {
+							console.log('Added ' + place + ' to database...');
+							return db.put(doc);
+						}
+					});			
+										
 					client.emit('twitter_trends', { result : trends });
 				});
 			})
@@ -121,7 +155,7 @@ function getYahooWOIED(callback, client, place) {
 					}
 				}
 				console.log("WOIED: " + WOIED);
-				callback(client, WOIED);
+				callback(client, place, WOIED);
 			});
 		})
 	});	
@@ -141,9 +175,33 @@ function onSocketEvent(client){
 }
 
 //once a command has been received, parse it
-function onPlaceSearch(place){
+function onPlaceSearch(place){	
+	var client = this;
+	var currentTime = new Date();
 	console.log(place);
-	getYahooWOIED(getTwitterTrends, this, place);
+	
+	db.get(place).then(function(doc) {
+		console.log('Found ' + place + ' in database...');
+		console.log(doc.result);
+		var trendTime = new Date(doc.created);
+		var trendExpirationTime = trendTime;
+		trendExpirationTime.setMinutes(trendExpirationTime.getMinutes() + 15);
+		
+		if(currentTime < trendExpirationTime) {
+			client.emit('twitter_trends', { result : doc.result });
+		}
+		else {
+			var yahooWOEID = parseInt(doc.woied);
+			getTwitterTrends(client, place, yahooWOEID);
+		}
+	}).then(function (result) {
+		console.log(result);
+	}).catch(function (err) {
+		if(err.status == 404 && err.name == "not_found") {
+			console.log('Did not find ' + place + ' in database...');
+			getYahooWOIED(getTwitterTrends, client, place);
+		}
+	});	
 }
 
 //start server

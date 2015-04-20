@@ -1,7 +1,7 @@
 function initialize() {
     var trends = undefined;
 
-    var socket = io.connect('localhost:10004', {
+    var socket = io.connect('compute.cse.tamu.edu:10004', {
         reconnectionDelay: 5000
     });
 
@@ -16,7 +16,7 @@ function initialize() {
             if (trends.length != 0) {
                 $(document).trigger('received_info');
                 for (var i = 0; i < trends.length; i++) {
-                    //                    console.log(trends[i].name + '<br>');
+                    //console.log(trends[i].name + '<br>');
                 }
             }
         } else {
@@ -65,8 +65,8 @@ function initialize() {
     };
 
     google.maps.event.addListener(autocomplete, 'place_changed', function () {
-        infowindow.close();
-        marker.setVisible(false);
+        //infowindow.close();
+        //marker.setVisible(true);
 
         var place = autocomplete.getPlace();
 
@@ -100,6 +100,7 @@ function initialize() {
             if (!trends)
                 str += '<br> No trends for city';
             infowindow.setContent(str);
+			infowindow.open(map, marker);
         });
 
         google.maps.event.addListener(marker, 'click', function () {
